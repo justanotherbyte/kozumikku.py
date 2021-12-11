@@ -12,7 +12,7 @@ An asynchronous library for interacting with the Kozumikku API.
 </sup>
 <br>
 <sup>
-    <a href="https://www.digitalocean.com/community/tutorials/how-to-host-a-website-using-cloudflare-and-nginx-on-ubuntu-20-04">Read the docs.</a>
+    <a href="">Read the docs.</a>
 </sup>
 </p>
 

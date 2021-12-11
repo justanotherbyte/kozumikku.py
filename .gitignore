@@ -3,3 +3,6 @@ Lib/
 Scripts/
 pyvenv.cfg
 tests.py
+build/
+dist/
+kozumikku.py.egg-info/
