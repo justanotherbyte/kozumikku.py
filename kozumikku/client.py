@@ -1,97 +1,88 @@
+from __future__ import annotations
+
+from urllib.parse import urlencode as _urlencode
+from typing import Optional, TYPE_CHECKING
+
 from .http import HTTPClient, Route
+from .image import ImageEndpoint, Image
+from .genshin import GenshinCharacter
+
+if TYPE_CHECKING:
+    import aiohttp
 
 
 class KozumikkuClient:
-    def __init__(self, token: str):
-        self.http = HTTPClient(token)
-
-        # aliases
-        self.computer_vision = self.cv
-
-    # image endpoints
-    async def image(
+    def __init__(
         self,
-        endpoint: str,
-        /,
-        url: str,
-        **kwargs
-    ) -> bytes:
-        """Request a /image/ endpoint.
-
-        :param endpoint: A specific endpoint for the cv endpoint group. Example: flip
-        :type endpoint: str
-        :param url: The URL of the image you would like to request the endpoint with
-        :type url: str
-        :return: The manipulated image as raw bytes
-        :rtype: bytes
-        """
-
-        endpoint = f"/image/{endpoint}?url={url}"
-        # construct route
-        route = Route(
-            "GET", # image endpoints are always GET
-            endpoint,
-            **kwargs
-        )
-
-        image_bytes = await self.http.request(route)
-        return image_bytes
-
-    # computer vision endpoints
-    async def cv(
-        self,
-        endpoint: str,
-        /,
-        url: str,
-        **kwargs
-    ) -> bytes:
-        """Request a /cv/ endpoint.
-
-        :param endpoint: A specific endpoint for the cv endpoint group. Example: edge-detect
-        :type endpoint: str
-        :param url: The URL of the image you would like to request the endpoint with
-        :type url: str
-        :return: The completed computer vision image as raw bytes
-        :rtype: bytes
-        """
-
-        endpoint = f"/cv/{endpoint}?url={url}"
-        # construct route
-        route = Route(
-            "GET", # CV endpoints are always GET
-            endpoint,
-            **kwargs
-        )
-
-        image_bytes = await self.http.request(route)
-        return image_bytes
-
+        token: str,
+        *,
+        session: Optional[aiohttp.ClientSession] = None
+    ):
+        self.http = HTTPClient(token, session=session)
+    
     # data endpoints
-    async def data(
-        self,
-        endpoint: str,
-        **kwargs
-    ) -> dict:
-        """Request a /data/ endpoint.
-
-        :param endpoint: A specific endpoint for the data endpoint group. Example: joke
-        :type endpoint: str
-        :return: The JSON payload returned by the API
-        :rtype: dict
-        """
-
-        endpoint = f"/data/{endpoint}"
-        # construct route
+    async def random_joke(self) -> str:
         route = Route(
-            "GET", # data endpoints are always GET
-            endpoint,
-            **kwargs
+            "GET",
+            "/data/joke"
         )
-        
-        data = await self.http.request(route)
-        return data
+        response = await self.http.request(route)
+        joke = response["joke"]
+        return joke
+    
+    async def random_fact(self) -> str:
+        route = Route(
+            "GET",
+            "/data/fact"
+        )
+        response = await self.http.request(route)
+        fact = response["fact"]
+        return fact
+    
+    # image endpoints
+    async def image_endpoint(
+        self,
+        endpoint: ImageEndpoint,
+        *,
+        url: str
+    ) -> Image:
+        path = "/image/" + endpoint.endpoint
 
+        parameters = {
+            "url": url,
+            **endpoint.options
+        }
+
+        encoded_parameters = _urlencode(parameters)
+
+        route = Route(
+            "GET",
+            f"{path}?{encoded_parameters}"
+        )
+
+        data, response = await self.http.request(route, want_response=True)
+        content_type = response.headers.get("Content-Type")
+        image = Image(data, content_type)
+        return image
+
+    # genshin
+    async def genshin_character(self, name: str) -> Optional[GenshinCharacter]:
+        name = name.lower().strip()
+        route = Route(
+            "GET",
+            "/genshin/character/{name}",
+            name=name
+        )
+
+        data = await self.http.request(route)
+        exists = data["exists"]
+
+        if exists is False:
+            return None
+
+        character = GenshinCharacter(data)
+        return character
+
+    # cleanup
     async def close(self):
         await self.http.close()
-
-    

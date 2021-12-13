@@ -45,3 +45,8 @@ class NotFound(HTTPException):
     Error raised when we get a 404
     """
     pass
+
+class Unauthorized(HTTPException):
+    """
+    Error raised when we get a 401
+    """

@@ -1,7 +1,5 @@
 import sys
 import json
-import asyncio
-import datetime
 from typing import (
     Optional,
     Union,
@@ -12,79 +10,63 @@ import aiohttp
 
 from . import __version__
 from .errors import (
+    KozumikkuServerError,
+    Forbidden,
+    NotFound,
     HTTPException,
     Ratelimited,
-    Forbidden,
-    KozumikkuServerError,
-    NotFound
+    Unauthorized
 )
 
 
-class Route:
-    BASE = "https://api.kozumikku.tech"
-    def __init__(self, method: str, path: str, **kwargs):
-        self.method = method
-        self.path = path
-        self.url = self.BASE + path.format(**kwargs)
-
-async def parse_response(response: aiohttp.ClientResponse) -> Union[bytes, dict]:
-    content = await response.read()
+async def parse_response(resp: aiohttp.ClientResponse) -> Union[dict, bytes]:
+    content = await resp.read()
     data = None
 
     try:
         data = json.loads(content)
     except (
-        json.JSONDecodeError,
-        UnicodeDecodeError
+        UnicodeDecodeError,
+        json.JSONDecodeError
     ):
-        # if the parse into json failed
-        # it means its an image endpoint 
-        # where raw bytes are returned
-        # we'll just return the raw bytes
         data = content
-    
+
     return data
 
-def _parse_ratelimit_information(response: aiohttp.ClientResponse) -> Tuple[Optional[int], Optional[datetime.datetime], bool]:
-    headers = response.headers
-    remaining = headers.get("X-Ratelimit-Remaining")
-    reset = headers.get("X-Ratelimit-Reset")
-    blocked = False
-
-    if reset:
-        # we've been blocked
-        blocked = True
-        dt = datetime.datetime.strptime(reset, "%Y-%m-%d %H:%M:%S.%f")
-        reset = dt
-    
-    if remaining:
-        remaining = int(remaining)
-
-    return (remaining, reset, blocked)
-
+class Route:
+    BASE = "https://api.kozumikku.tech"
+    def __init__(self, method: str, path: str, **parameters):
+        self.method = method
+        self.path = path.format(**parameters)
+        self.raw_path = path
+        self.url = self.BASE + self.path
 
 class HTTPClient:
-    """
-    Represents a client sending requests
-    to the Kozumikku API.
-    """
-
-    def __init__(self, token: str):
-        self.__session: Optional[aiohttp.ClientSession] = None # filled in the first request
-
+    def __init__(
+        self,
+        token: str,
+        *,
+        session: Optional[aiohttp.ClientSession] = None
+    ):
+        self.token = token
         user_agent = "HTTPClient (https://github.com/justanotherbyte/kozumikku.py {}) Python/{} aiohttp/{}"
         self.user_agent = user_agent.format(__version__, sys.version, aiohttp.__version__)
-        self.token = token
 
-    def _require_session(self):
-        if self.__session is None or self.__session.closed is True:
-            self.__session = aiohttp.ClientSession()
+        self.__session = session # None or a valid aiohttp.ClientSession
 
-    async def request(self, route: Route, **kwargs) -> Union[bytes, dict]:
+    def _require_session(self) -> Optional[aiohttp.ClientSession]:
+        if self.__session is None or self.__session.closed:
+            session = aiohttp.ClientSession()
+            self.__session = session
+            return session
+        
+        return None
+
+    async def request(self, route: Route, **kwargs) -> Union[Tuple[Union[bytes, dict], aiohttp.ClientResponse], Union[bytes, dict]]:
         method = route.method
         url = route.url
+        want_response = kwargs.pop("want_response", False)
 
-        # Headers creation
         headers = {
             "User-Agent": self.user_agent,
             "Authorization": self.token
@@ -96,24 +78,28 @@ class HTTPClient:
         async with self.__session.request(method, url, **kwargs) as resp:
             data = await parse_response(resp)
 
-            _, _, blocked = _parse_ratelimit_information(resp)
-
-            if blocked:
-                raise Ratelimited(data, resp)
-
             if resp.ok:
-                return data # everything is fine, return the json/bytes
+                # everything is fine
+                # just return the data
+                if want_response:
+                    return (data, resp)
+                else:
+                    return data
 
-            if resp.status >= 500:
+            if resp.status == 404:
+                raise NotFound(data, resp)
+            elif resp.status >= 500:
                 raise KozumikkuServerError(data, resp)
             elif resp.status == 403:
                 raise Forbidden(data, resp)
-            elif resp.status == 404:
-                raise NotFound(data, resp)
+            elif resp.status == 429:
+                raise Ratelimited(data, resp)
+            elif resp.status == 401:
+                raise Unauthorized(data, resp)
             else:
+                # everything else
                 raise HTTPException(data, resp)
-            
 
     async def close(self):
-        if self.__session:
+        if self.__session and not self.__session.closed:
             await self.__session.close()
