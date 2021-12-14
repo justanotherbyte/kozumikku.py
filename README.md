@@ -51,19 +51,20 @@ Examples
 --------
 
 ```py
-from kozumikku import KozumikkuClient
+from kozumikku import KozumikkuClient, ImageEndpoint
 
+kozu = KozumikkuClient("API-TOKEN-HERE", session=a_custom_session_if_you_want_to)
 
-client = KozumikkuClient("API-TOKEN-HERE")
-# get an api token here: https://www.kozumikku.tech/api/
+endpoint = ImageEndpoint.build("frostedglass") # custom args: ImageEndpoint.build("filter", filter="oceanic")
+image = await client.image_endpoint(endpoint, url="image-url")
 
-# Requesting endpoints
-
-## Say we have an endpoint in the /image/ category, and we need to
-## request the /flip/ endpoint for it. We can simply run this:
-image: bytes = await client.image("flip", url="image-url")
-
-# Read the docs for more information
+bytes_io_object = image.io
+raw_bytes = image.raw
+image_size = image.size
+print(image)
+```
+```sh
+>>> <Image format='image/png' size=64>
 ```
 
 
